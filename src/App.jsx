@@ -385,6 +385,25 @@ function LorentzCanvas() {
 // ── 4. Raumzeit-Vektor ────────────────────────────────────────────────────
 function RaumzeitVektor() {
   const [vel, setVel] = useState(0)
+  const sliderRef = useRef(null)
+
+  useEffect(() => {
+    const el = sliderRef.current
+    if (!el) return
+    const handleTouch = (e) => {
+      e.preventDefault()
+      const touch = e.touches[0]
+      const rect = el.getBoundingClientRect()
+      const ratio = Math.min(1, Math.max(0, (touch.clientX - rect.left) / rect.width))
+      setVel(Math.round(ratio * 99 / 0.5) * 0.5)
+    }
+    el.addEventListener('touchstart', handleTouch, { passive: false })
+    el.addEventListener('touchmove', handleTouch, { passive: false })
+    return () => {
+      el.removeEventListener('touchstart', handleTouch)
+      el.removeEventListener('touchmove', handleTouch)
+    }
+  }, [])
   const beta = vel / 100
   const vRaum = beta
   const vZeit = Math.sqrt(Math.max(0, 1 - beta * beta))
@@ -500,7 +519,7 @@ function RaumzeitVektor() {
 
       {/* Slider */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 14px' }}>
-        <input type="range" min="0" max="99" step="0.5"
+        <input ref={sliderRef} type="range" min="0" max="99" step="0.5"
           value={vel}
           onChange={e => setVel(parseFloat(e.target.value))}
           style={{ flex: 1, accentColor: T.accent }}
