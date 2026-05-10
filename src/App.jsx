@@ -519,11 +519,13 @@ function RaumzeitVektor() {
 
       {/* Slider */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 14px' }}>
-        <input ref={sliderRef} type="range" min="0" max="99" step="0.5"
-          value={vel}
-          onChange={e => setVel(parseFloat(e.target.value))}
-          style={{ flex: 1, accentColor: T.accent }}
-        />
+        <div ref={sliderRef} style={{ flex: 1, padding: '10px 0' }}>
+          <input type="range" min="0" max="99" step="0.5"
+            value={vel}
+            onChange={e => setVel(parseFloat(e.target.value))}
+            style={{ width: '100%', display: 'block', accentColor: T.accent }}
+          />
+        </div>
         <span style={{ fontFamily: T.mono, fontSize: 16, color: T.accent, minWidth: 52, textAlign: 'right' }}>
           {(vel / 100).toFixed(2)} c
         </span>
