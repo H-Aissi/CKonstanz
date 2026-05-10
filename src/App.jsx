@@ -146,9 +146,8 @@ const SPEEDS = [
   { label: 'Licht',          pct: 100      },
 ]
 const BAR_COLORS = [T.blue, T.blue, T.gold, T.accent]
-const LOG_MIN = Math.log10(0.0000005)
-const LOG_MAX = Math.log10(100)
-const logScale = (pct) => ((Math.log10(pct) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * 100
+const MIN_VIS_PCT = 0.25 // Mindestbreite damit ein Balken überhaupt sichtbar ist
+const linearScale = (pct) => pct === 100 ? 100 : Math.max((pct / 100) * 100, MIN_VIS_PCT)
 
 function SpeedBars() {
   const [visible, setVisible] = useState(false)
@@ -168,7 +167,7 @@ function SpeedBars() {
   return (
     <div ref={ref} style={S.vizWrap}>
       <div style={{ fontFamily: T.mono, fontSize: 11, color: T.textTer, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 18 }}>
-        Geschwindigkeitsvergleich — logarithmische Skala
+        Geschwindigkeitsvergleich — lineare Skala (c = 100 %)
       </div>
       {SPEEDS.map((s, i) => {
         const pctStr = s.pct < 0.001
@@ -185,7 +184,7 @@ function SpeedBars() {
             <div style={{ background: T.border, borderRadius: 2, height: 7, overflow: 'hidden' }}>
               <div style={{
                 height: '100%',
-                width: visible ? `${logScale(s.pct)}%` : '0%',
+                width: visible ? `${linearScale(s.pct)}%` : '0%',
                 background: BAR_COLORS[i],
                 borderRadius: 2,
                 transition: `width 1.3s cubic-bezier(0.25,0.46,0.45,0.94) ${i * 220}ms`,
@@ -383,7 +382,160 @@ function LorentzCanvas() {
   )
 }
 
-// ── 4. Lichtuhr ────────────────────────────────────────────────────────────
+// ── 4. Raumzeit-Vektor ────────────────────────────────────────────────────
+function RaumzeitVektor() {
+  const [vel, setVel] = useState(0)
+  const beta = vel / 100
+  const vRaum = beta
+  const vZeit = Math.sqrt(Math.max(0, 1 - beta * beta))
+  const gamma = beta >= 0.9999 ? 9999 : 1 / Math.sqrt(1 - beta * beta)
+
+  const origX = 60, origY = 255, R = 185
+  const px = origX + beta * R
+  const py = origY - vZeit * R
+  const hasRaum = beta > 0.01
+  const hasZeit = vZeit > 0.01
+  const raSize = 10
+
+  // Senkrechter Offset für das "c"-Label
+  const dx = px - origX, dy = py - origY
+  const len = Math.sqrt(dx * dx + dy * dy) || 1
+  const labelX = (origX + px) / 2 + (dy / len) * 14
+  const labelY = (origY + py) / 2 - (dx / len) * 14
+
+  return (
+    <div style={S.vizWrap}>
+      <svg width="100%" viewBox="0 0 360 300" style={{ display: 'block' }}>
+        <defs>
+          <marker id="rzArrowC" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill={T.text} />
+          </marker>
+          <marker id="rzArrowAx" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill={T.textSec} />
+          </marker>
+        </defs>
+
+        {/* Achsen */}
+        <line x1={origX} y1={origY} x2={origX + R + 30} y2={origY}
+          stroke={T.textSec} strokeWidth="1.5" markerEnd="url(#rzArrowAx)" />
+        <line x1={origX} y1={origY} x2={origX} y2={origY - R - 30}
+          stroke={T.textSec} strokeWidth="1.5" markerEnd="url(#rzArrowAx)" />
+
+        {/* Achsenbeschriftungen */}
+        <text x={origX + R + 38} y={origY + 4}
+          fontFamily={T.mono} fontSize="10" fill={T.textSec}>v_Raum</text>
+        <text x={origX} y={origY - R - 36}
+          textAnchor="middle" fontFamily={T.mono} fontSize="10" fill={T.textSec}>v_Zeit</text>
+
+        {/* Ticks X */}
+        <line x1={origX + R * 0.5} y1={origY - 4} x2={origX + R * 0.5} y2={origY + 4}
+          stroke={T.textSec} strokeWidth="1" />
+        <text x={origX + R * 0.5} y={origY + 15}
+          textAnchor="middle" fontFamily={T.mono} fontSize="9.5" fill={T.textTer}>0.5c</text>
+        <line x1={origX + R} y1={origY - 4} x2={origX + R} y2={origY + 4}
+          stroke={T.textSec} strokeWidth="1" />
+        <text x={origX + R} y={origY + 15}
+          textAnchor="middle" fontFamily={T.mono} fontSize="9.5" fill={T.textTer}>c</text>
+
+        {/* Ticks Y */}
+        <line x1={origX - 4} y1={origY - R * 0.5} x2={origX + 4} y2={origY - R * 0.5}
+          stroke={T.textSec} strokeWidth="1" />
+        <text x={origX - 8} y={origY - R * 0.5 + 4}
+          textAnchor="end" fontFamily={T.mono} fontSize="9.5" fill={T.textTer}>0.5c</text>
+        <line x1={origX - 4} y1={origY - R} x2={origX + 4} y2={origY - R}
+          stroke={T.textSec} strokeWidth="1" />
+        <text x={origX - 8} y={origY - R + 4}
+          textAnchor="end" fontFamily={T.mono} fontSize="9.5" fill={T.textTer}>c</text>
+
+        {/* Viertelkreisbogen */}
+        <path d={`M ${origX} ${origY - R} A ${R} ${R} 0 0 1 ${origX + R} ${origY}`}
+          fill="none" stroke={T.textTer} strokeWidth="1.6" strokeDasharray="6,4" />
+
+        {/* Projektionslinien */}
+        {hasRaum && hasZeit && <>
+          <line x1={px} y1={py} x2={px} y2={origY}
+            stroke={T.border} strokeWidth="1" strokeDasharray="4,3" />
+          <line x1={px} y1={py} x2={origX} y2={py}
+            stroke={T.border} strokeWidth="1" strokeDasharray="4,3" />
+        </>}
+
+        {/* v_Raum Komponente (blau, horizontal) */}
+        <line x1={origX} y1={origY} x2={px} y2={origY}
+          stroke="#3B8BD4" strokeWidth="2.5" />
+        {hasRaum && (
+          <text x={(origX + px) / 2} y={origY + 18}
+            textAnchor="middle" fontFamily={T.serif} fontSize="11" fill="#3B8BD4" fontStyle="italic">
+            v_Raum
+          </text>
+        )}
+
+        {/* v_Zeit Komponente (orange, vertikal) */}
+        <line x1={origX} y1={origY} x2={origX} y2={py}
+          stroke="#D85A30" strokeWidth="2.5" />
+        {hasZeit && (
+          <text
+            x={origX - 20} y={(origY + py) / 2}
+            textAnchor="middle" fontFamily={T.serif} fontSize="11" fill="#D85A30" fontStyle="italic"
+            transform={`rotate(-90, ${origX - 20}, ${(origY + py) / 2})`}>
+            v_Zeit
+          </text>
+        )}
+
+        {/* Rechter-Winkel-Marker am Ursprung */}
+        {hasRaum && hasZeit && (
+          <path d={`M ${origX + raSize} ${origY} L ${origX + raSize} ${origY - raSize} L ${origX} ${origY - raSize}`}
+            fill="none" stroke={T.textSec} strokeWidth="1" />
+        )}
+
+        {/* Hauptvektor c */}
+        <line x1={origX} y1={origY} x2={px} y2={py}
+          stroke={T.text} strokeWidth="2" markerEnd="url(#rzArrowC)" />
+        <text x={labelX} y={labelY}
+          textAnchor="middle" fontFamily={T.serif} fontSize="14" fill={T.text} fontStyle="italic">c</text>
+
+        {/* Punkt auf dem Bogen */}
+        <circle cx={px} cy={py} r="9" fill={T.accent} opacity="0.2" />
+        <circle cx={px} cy={py} r="5" fill={T.accent} />
+      </svg>
+
+      {/* Slider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 14px' }}>
+        <input type="range" min="0" max="99" step="0.5"
+          value={vel}
+          onChange={e => setVel(parseFloat(e.target.value))}
+          style={{ flex: 1, accentColor: T.accent }}
+        />
+        <span style={{ fontFamily: T.mono, fontSize: 16, color: T.accent, minWidth: 52, textAlign: 'right' }}>
+          {(vel / 100).toFixed(2)} c
+        </span>
+      </div>
+
+      {/* Kennzahlen-Karten */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 3, padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.textTer, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>
+            Raumgeschwindigkeit
+          </div>
+          <div style={{ fontFamily: T.mono, fontSize: 22, color: '#3B8BD4' }}>{vRaum.toFixed(2)} c</div>
+        </div>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 3, padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.textTer, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>
+            Zeitgeschwindigkeit
+          </div>
+          <div style={{ fontFamily: T.mono, fontSize: 22, color: '#D85A30' }}>{vZeit.toFixed(2)} c</div>
+        </div>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 3, padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.textTer, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>
+            Lorentzfaktor γ
+          </div>
+          <div style={{ fontFamily: T.mono, fontSize: 22, color: T.accent }}>{gamma.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 5. Lichtuhr ────────────────────────────────────────────────────────────
 function LichtUhr() {
   const [running, setRunning] = useState(true)
   const [phase, setPhase] = useState(0)
@@ -408,27 +560,32 @@ function LichtUhr() {
   const H = 110 // mirror separation
   const lCX = 90, rCX = 290
   const topY = 55, botY = topY + H
-
-  // bounce fraction 0→1→0
-  const bounce = phase < 0.5 ? phase / 0.5 : 1 - (phase - 0.5) / 0.5
-
-  // left: straight vertical
-  const lX = lCX
-  const lY = botY - bounce * H
-
-  // right: diagonal (horizontal drift ±30)
   const drift = 32
-  const rX = phase < 0.5
-    ? rCX - drift + bounce * 2 * drift
-    : rCX + drift - bounce * 2 * drift
-  const rY = botY - bounce * H
+  const innerTop = topY + 4  // untere Kante des oberen Spiegels
+  const innerBot = botY - 4  // obere Kante des unteren Spiegels
+
+  // left: straight vertical bounce
+  const bounce = phase < 0.5 ? phase / 0.5 : 1 - (phase - 0.5) / 0.5
+  const lX = lCX
+  const lY = innerBot - bounce * (innerBot - innerTop)
+
+  // right: whole unit (mirrors + photon) drifts together
+  const halfProg = phase < 0.5 ? phase / 0.5 : (phase - 0.5) / 0.5
+  const xOffset = phase < 0.5
+    ? -drift + halfProg * 2 * drift
+    : +drift - halfProg * 2 * drift
+  const mirrorX = rCX + xOffset
+  const rX = rCX + xOffset
+  const rY = phase < 0.5
+    ? innerBot - halfProg * (innerBot - innerTop)
+    : innerTop + halfProg * (innerBot - innerTop)
 
   const mirrorFill = T.blue
   const glow = 0.6 + 0.4 * Math.sin(phase * Math.PI * 20)
 
   return (
     <div style={S.vizWrap}>
-      <svg width="100%" viewBox="0 0 380 230" style={{ display: 'block' }}>
+      <svg width="100%" viewBox="0 0 380 385" style={{ display: 'block' }}>
         {/* Labels */}
         <text x={lCX} y="34" textAnchor="middle"
           fontFamily={T.serif} fontSize="13" fill={T.text} fontStyle="italic">Ruhende Uhr</text>
@@ -444,21 +601,21 @@ function LichtUhr() {
         <rect x={lCX - 26} y={botY - 4} width="52" height="9" fill={mirrorFill} rx="2" opacity="0.72" />
 
         {/* Left path */}
-        <line x1={lCX} y1={topY + 5} x2={lCX} y2={botY - 4}
+        <line x1={lCX} y1={innerTop} x2={lCX} y2={innerBot}
           stroke={T.border} strokeWidth="1.2" strokeDasharray="4,3" />
 
         {/* Left photon */}
         <circle cx={lX} cy={lY} r={7 * glow} fill={T.gold} opacity="0.2" />
         <circle cx={lX} cy={lY} r="4.5" fill={T.gold} />
 
-        {/* Right mirrors — offset to hint at motion */}
-        <rect x={rCX - 26 + (phase < 0.5 ? -10 : 10)} y={topY - 5} width="52" height="9" fill={mirrorFill} rx="2" opacity="0.72" />
-        <rect x={rCX - 26 + (phase < 0.5 ? 10 : -10)} y={botY - 4} width="52" height="9" fill={mirrorFill} rx="2" opacity="0.72" />
+        {/* Right mirrors — both travel together */}
+        <rect x={mirrorX - 26} y={topY - 5} width="52" height="9" fill={mirrorFill} rx="2" opacity="0.72" />
+        <rect x={mirrorX - 26} y={botY - 4} width="52" height="9" fill={mirrorFill} rx="2" opacity="0.72" />
 
-        {/* Right diagonal paths */}
-        <line x1={rCX - drift} y1={topY + 5} x2={rCX + drift} y2={botY - 4}
+        {/* Right diagonal paths — static guides showing the photon trace */}
+        <line x1={rCX - drift} y1={innerBot} x2={rCX + drift} y2={innerTop}
           stroke={T.border} strokeWidth="1.2" strokeDasharray="4,3" />
-        <line x1={rCX + drift} y1={topY + 5} x2={rCX - drift} y2={botY - 4}
+        <line x1={rCX + drift} y1={innerTop} x2={rCX - drift} y2={innerBot}
           stroke={T.border} strokeWidth="1.2" strokeDasharray="4,3" />
 
         {/* Right photon */}
@@ -468,6 +625,50 @@ function LichtUhr() {
         {/* Motion arrow */}
         <text x={rCX + 58} y={botY + 12}
           fontFamily={T.mono} fontSize="12" fill={T.accent}>v →</text>
+
+        {/* ── Pythagoras-Dreieck (statisch) ── */}
+        {/* A(160,350) B(220,350) C(220,240) — Rechter Winkel bei B */}
+        <line x1="20" y1="210" x2="360" y2="210"
+          stroke={T.border} strokeWidth="0.7" />
+        <text x="190" y="224" textAnchor="middle"
+          fontFamily={T.mono} fontSize="10" fill={T.textTer} letterSpacing="1">
+          PYTHAGORAS · ZEITDILATATION
+        </text>
+
+        {/* Vertikale Kathete BC — c·t₀ */}
+        <line x1="220" y1="240" x2="220" y2="350"
+          stroke={T.blue} strokeWidth="1.8" />
+
+        {/* Horizontale Kathete AB — v·t */}
+        <line x1="160" y1="350" x2="220" y2="350"
+          stroke={T.textSec} strokeWidth="1.8" strokeDasharray="5,3" />
+
+        {/* Hypotenuse AC — c·t */}
+        <line x1="160" y1="350" x2="220" y2="240"
+          stroke={T.gold} strokeWidth="2.5" />
+
+        {/* Rechter-Winkel-Marker bei B(220,350) */}
+        <path d="M212,350 L212,342 L220,342"
+          fill="none" stroke={T.textSec} strokeWidth="1.2" />
+
+        {/* Label: c·t₀ (rechts der vertikalen Kathete) */}
+        <text x="226" y="299" fontFamily={T.serif} fontSize="12"
+          fill={T.blue} fontStyle="italic">c · t₀</text>
+
+        {/* Label: v·t (unter der horizontalen Kathete) */}
+        <text x="190" y="366" textAnchor="middle"
+          fontFamily={T.serif} fontSize="12" fill={T.textSec} fontStyle="italic">v · t</text>
+
+        {/* Label: c·t (entlang der Hypotenuse) — Mittelpunkt (190,295), Winkel −61° */}
+        <text x="183" y="295" textAnchor="middle"
+          fontFamily={T.serif} fontSize="12" fill={T.gold} fontStyle="italic"
+          transform="rotate(-61, 183, 295)">c · t</text>
+
+        {/* Pythagoräische Formel */}
+        <text x="190" y="380" textAnchor="middle"
+          fontFamily={T.mono} fontSize="11" fill={T.text}>
+          (c·t)² = (v·t)² + (c·t₀)²
+        </text>
       </svg>
       <span style={S.vizCaption}>Das Licht legt in der bewegten Uhr einen längeren, diagonalen Weg zurück</span>
       <div style={{ textAlign: 'center', marginTop: 12 }}>
@@ -535,42 +736,6 @@ function ZeitRechner() {
 }
 
 // ── 6. E=mc² Rechner ──────────────────────────────────────────────────────
-function EMC2Rechner() {
-  const [mass, setMass] = useState(10)
-  const c = 299792458
-  const E = mass * c * c
-  const hiroshima = (E / 4.184e9) / 15000
-
-  return (
-    <div style={S.vizWrap}>
-      <div style={{ marginBottom: 16 }}>
-        <input type="range" min="1" max="100" step="1"
-          value={mass}
-          onChange={e => setMass(parseInt(e.target.value))}
-          style={{ width: '100%', accentColor: T.accent }}
-        />
-        <div style={{ textAlign: 'center', fontFamily: T.mono, fontSize: 20, color: T.accent, marginTop: 6 }}>
-          Masse: {mass} kg
-        </div>
-      </div>
-      <div className="two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 3, padding: '12px 16px', textAlign: 'center' }}>
-          <div style={{ fontFamily: T.mono, fontSize: 11, color: T.textTer, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>
-            Energie
-          </div>
-          <div style={{ fontFamily: T.mono, fontSize: 19, color: T.accent }}>{E.toExponential(2)} J</div>
-        </div>
-        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 3, padding: '12px 16px', textAlign: 'center' }}>
-          <div style={{ fontFamily: T.mono, fontSize: 11, color: T.textTer, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 5 }}>
-            Hiroshima-Bomben
-          </div>
-          <div style={{ fontFamily: T.mono, fontSize: 19, color: T.blue }}>× {hiroshima.toFixed(1)}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Timeline ───────────────────────────────────────────────────────────────
 const TIMELINE = [
   { year: '1887', title: 'Michelson-Morley-Experiment', text: 'Das Gründungsexperiment: Kein Ätherwind nachweisbar. Das Licht breitet sich in jede Richtung gleich schnell aus. Seitdem hundertfach mit immer höherer Präzision wiederholt — stets dasselbe Nullergebnis.' },
@@ -612,8 +777,7 @@ const MODERN = [
 // ── TOC ────────────────────────────────────────────────────────────────────
 const TOC = [
   { n: '01', t: 'Einführung — Was bedeutet Konstanz der Lichtgeschwindigkeit?' },
-  { n: '02', t: 'Der historische Kontext — Das Äther-Problem' },
-  { n: '03', t: 'Das Michelson-Morley-Experiment' },
+  { n: '02', t: 'Das Michelson-Morley-Experiment' },
   { n: '04', t: 'Einsteins Postulate der speziellen Relativitätstheorie' },
   { n: '05', t: 'Was macht c so besonders?' },
   { n: '06', t: 'Die revolutionären Konsequenzen' },
@@ -729,42 +893,9 @@ export default function App() {
             <SpeedBars />
           </section>
 
-          {/* ── 02 HISTORISCHER KONTEXT ── */}
+          {/* ── 02 MICHELSON-MORLEY ── */}
           <section style={S.sectionGap}>
-            <Heading num="02">Der historische Kontext — Das Äther-Problem</Heading>
-            <p style={S.p}>
-              Im 19. Jahrhundert war die Physik von einer scheinbar logischen Annahme geprägt: Wenn
-              Licht eine Welle ist, dann braucht es — wie Schall oder Wasserwellen — ein Medium, in dem
-              es sich ausbreitet. Dieses hypothetische Medium wurde „Lichtäther" genannt. Der Äther
-              sollte das gesamte Universum durchdringen, vollkommen durchsichtig sein und dabei
-              paradoxerweise sowohl extrem steif (um die hohe Lichtgeschwindigkeit zu ermöglichen) als
-              auch völlig widerstandslos gegenüber der Bewegung von Planeten sein.
-            </p>
-            <p style={S.p}>
-              Diese Vorstellung führte zu einer konkreten Vorhersage: Wenn die Erde sich durch den
-              Äther bewegt, dann sollte sich die Lichtgeschwindigkeit je nach Richtung geringfügig
-              unterscheiden — so wie ein Schwimmer, der mit oder gegen die Strömung schwimmt,
-              unterschiedlich schnell vorankommt. Die Erde bewegt sich mit etwa 30 km/s um die Sonne,
-              was einen messbaren „Ätherwind" erzeugen sollte.
-            </p>
-            <blockquote style={S.bq}>
-              „Die Einführung eines Lichtäthers wird sich insofern als überflüssig erweisen, als nach
-              der zu entwickelnden Auffassung kein mit besonderen Eigenschaften ausgestatteter Raum
-              eingeführt wird."
-              <footer style={{ marginTop: 8, fontStyle: 'normal', fontSize: 14, color: T.textTer, fontFamily: T.serif }}>
-                — Albert Einstein, <cite>Zur Elektrodynamik bewegter Körper</cite>, 1905
-              </footer>
-            </blockquote>
-            <p style={S.p}>
-              Zahlreiche Physiker versuchten, diesen Ätherwind nachzuweisen. Der prominenteste Versuch
-              war das Experiment von Albert A. Michelson und Edward W. Morley — ein Experiment, das die
-              Physik in eine tiefe Krise stürzte und den Weg für Einsteins Revolution bereitete.
-            </p>
-          </section>
-
-          {/* ── 03 MICHELSON-MORLEY ── */}
-          <section style={S.sectionGap}>
-            <Heading num="03">Das Michelson-Morley-Experiment</Heading>
+            <Heading num="02">Das Michelson-Morley-Experiment</Heading>
             <p style={S.p}>
               Im Jahr 1887 führten Albert A. Michelson und Edward W. Morley in Cleveland, Ohio, eines
               der folgenreichsten Experimente der Physikgeschichte durch. Sie konstruierten ein
@@ -868,6 +999,7 @@ export default function App() {
               Raum und Zeit bilden eine vierdimensionale Raumzeit, in der c die „Wechselkursrate"
               festlegt.
             </p>
+            <RaumzeitVektor />
             <p style={S.p}>
               <strong style={{ color: T.accent }}>c folgt aus den Naturkonstanten.</strong>{' '}
               Die Lichtgeschwindigkeit ergibt sich direkt aus der elektrischen Feldkonstante ε₀ und der
@@ -918,14 +1050,6 @@ export default function App() {
               f="L' = L · √(1 − v²/c²)"
               caption="Längenkontraktion — die beobachtete Länge L' ist kürzer als die Eigenlänge L"
             />
-
-            <h3 style={S.h3}>Masse-Energie-Äquivalenz</h3>
-            <p style={S.p}>
-              Masse und Energie sind zwei Formen derselben Sache. Selbst ein ruhendes Objekt besitzt
-              durch seine Masse eine enorme Energiemenge. Ein Kilogramm Materie enthält so viel Energie
-              wie die Explosion von etwa 21 Megatonnen TNT.
-            </p>
-            <EMC2Rechner />
 
             <h3 style={S.h3}>Relativität der Gleichzeitigkeit</h3>
             <p style={S.p}>
