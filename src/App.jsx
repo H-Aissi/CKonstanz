@@ -198,14 +198,19 @@ function SpeedBars() {
 }
 
 // ── 2. Interferometer ──────────────────────────────────────────────────────
+const IBLUE = '#3B8BD4'
+const IORANGE = '#D85A30'
+
 function Interferometer() {
   const [prog, setProg] = useState(0)
   const rafRef = useRef(null)
   const pRef = useRef(0)
+  const windRef = useRef(0)
 
   useEffect(() => {
     const tick = () => {
-      pRef.current = (pRef.current + 0.007) % 1
+      pRef.current = (pRef.current + 0.0042) % 1
+      windRef.current += 0.9          // monoton – springt nie zurück
       setProg(pRef.current)
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -213,69 +218,229 @@ function Interferometer() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
-  // layout
-  const cx = 200, cy = 170
-  const arm = 110
+  const cx = 195, cy = 158
+  const arm = 100
+  const screenY = cy + 102
 
-  // photon travels: right arm → back → up arm → back (4 quarters)
-  let px = cx, py = cy
-  if (prog < 0.25) {
-    px = cx + (prog / 0.25) * arm; py = cy
-  } else if (prog < 0.5) {
-    px = cx + arm - ((prog - 0.25) / 0.25) * arm; py = cy
-  } else if (prog < 0.75) {
-    px = cx; py = cy - ((prog - 0.5) / 0.25) * arm
-  } else {
-    px = cx; py = cy - arm + ((prog - 0.75) / 0.25) * arm
+  // wave packet constants
+  const WL = 20, AMP = 5, PKT = 60  // wavelength, amplitude, packet length
+
+  // traveling phase – advances continuously for wave motion
+  const tPh = prog * 14 * Math.PI
+
+  // maps prog to [0,1] for a time window
+  const lt = (lo, hi) => Math.max(0, Math.min(1, (prog - lo) / (hi - lo)))
+
+  // short wave packet along a horizontal segment – pos is 0..1 center position
+  function hPkt(x1, x2, y, pos, ph) {
+    const dist = Math.abs(x2 - x1)
+    const dir = x2 >= x1 ? 1 : -1
+    const center = dist * pos
+    const s0 = Math.max(0, center - PKT / 2)
+    const s1 = Math.min(dist, center + PKT / 2)
+    if (s1 - s0 < 2) return ''
+    const n = Math.ceil((s1 - s0) * 1.4)
+    let d = ''
+    for (let i = 0; i <= n; i++) {
+      const s = s0 + (i / n) * (s1 - s0)
+      const xx = x1 + dir * s
+      const yy = y + AMP * Math.sin(2 * Math.PI * s / WL - ph)
+      d += (i === 0 ? 'M' : 'L') + xx.toFixed(1) + ',' + yy.toFixed(1) + ' '
+    }
+    return d
   }
 
-  const glow = 0.65 + 0.35 * Math.sin(prog * Math.PI * 24)
+  // short wave packet along a vertical segment
+  function vPkt(x, y1, y2, pos, ph) {
+    const dist = Math.abs(y2 - y1)
+    const dir = y2 >= y1 ? 1 : -1
+    const center = dist * pos
+    const s0 = Math.max(0, center - PKT / 2)
+    const s1 = Math.min(dist, center + PKT / 2)
+    if (s1 - s0 < 2) return ''
+    const n = Math.ceil((s1 - s0) * 1.4)
+    let d = ''
+    for (let i = 0; i <= n; i++) {
+      const s = s0 + (i / n) * (s1 - s0)
+      const yy = y1 + dir * s
+      const xx = x + AMP * Math.sin(2 * Math.PI * s / WL - ph)
+      d += (i === 0 ? 'M' : 'L') + xx.toFixed(1) + ',' + yy.toFixed(1) + ' '
+    }
+    return d
+  }
+
+  // small horizontal wave packet for the screen panel
+  function panelWave(xStart, yBase, ph, len = 60) {
+    let d = ''
+    for (let i = 0; i <= len; i++) {
+      const yy = yBase + AMP * Math.sin(2 * Math.PI * i / WL - tPh * 0.22 + ph)
+      d += (i === 0 ? 'M' : 'L') + (xStart + i).toFixed(1) + ',' + yy.toFixed(1) + ' '
+    }
+    return d
+  }
+
+  // animation phases – value is packet center position (0..1) along the segment
+  const srcPos  = lt(0.00, 0.12)   // source → splitter (gold)
+  const outPos  = lt(0.12, 0.33)   // splitter → mirrors (both arms)
+  const retPos  = lt(0.33, 0.54)   // mirrors → splitter (both return)
+  const toscPos = lt(0.54, 0.70)   // splitter → screen (both beams)
+  const scrA    = lt(0.70, 0.80) * (1 - lt(0.87, 1.00))  // screen panel
+
+  // Vertikaler Wind: Offset 0..56, nie springend
+  const WIND_STEP = 56, WIND_COLS = [16, 54, 92, 148, 248, 300, 348, 386]
+  const windOff = windRef.current % WIND_STEP
+  const panelX = cx - 52
 
   return (
     <div style={S.vizWrap}>
-      <svg width="100%" viewBox="0 0 400 260" style={{ display: 'block' }}>
-        {/* Dashed arms */}
-        <line x1={cx} y1={cy} x2={cx + arm} y2={cy}
-          stroke={T.border} strokeWidth="1.5" strokeDasharray="6,4" />
-        <line x1={cx} y1={cy} x2={cx} y2={cy - arm}
-          stroke={T.border} strokeWidth="1.5" strokeDasharray="6,4" />
+      <svg width="100%" viewBox="0 0 400 380" style={{ display: 'block' }}>
+        <defs>
+          <marker id="wArr" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,7 3,0 6" fill={T.gold} />
+          </marker>
+          <clipPath id="pClip">
+            <rect x={panelX} y={screenY + 22} width="104" height="46" />
+          </clipPath>
+        </defs>
 
-        {/* Source beam */}
-        <line x1={cx - arm} y1={cy} x2={cx - 10} y2={cy}
-          stroke={T.gold} strokeWidth="1.5" opacity="0.45" strokeDasharray="5,3" />
+        {/* ── Ätherfahrtwind-Label ── */}
+        <rect x="0" y="0" width="400" height="40" fill={T.surface} />
+        <text x="10" y="13" fontFamily={T.mono} fontSize="9" fill={T.gold} letterSpacing="1.5">
+          ÄTHERFAHRTWIND (HYPOTHETISCH)
+        </text>
+        <text x="388" y="13" fontFamily={T.mono} fontSize="9" fill={T.textTer} textAnchor="end">
+          Erde ↓ 30 km/s
+        </text>
+        <line x1="0" y1="40" x2="400" y2="40" stroke={T.border} strokeWidth="0.8" />
 
-        {/* Source */}
-        <circle cx={cx - arm} cy={cy} r="11" fill="none" stroke={T.gold} strokeWidth="2" />
-        <circle cx={cx - arm} cy={cy} r="5.5" fill={T.gold} opacity="0.7" />
+        {/* ── Vertikale Wind-Pfeile (von oben nach unten) ── */}
+        {WIND_COLS.map((x, ci) =>
+          Array.from({ length: 8 }, (_, j) => {
+            const y1 = 42 - WIND_STEP + j * WIND_STEP + windOff
+            const y2 = y1 + 30
+            if (y2 < 42 || y1 > 375) return null
+            return (
+              <line key={`w${ci}-${j}`}
+                x1={x} y1={Math.max(42, y1)} x2={x} y2={Math.min(y2, 375)}
+                stroke={T.gold} strokeWidth="1.5" opacity="0.22"
+                markerEnd="url(#wArr)" />
+            )
+          })
+        )}
 
-        {/* Beamsplitter — 45° square */}
+        {/* ── Ghost guides ── */}
+        <line x1={cx - arm} y1={cy} x2={cx + arm} y2={cy}
+          stroke={T.border} strokeWidth="1" strokeDasharray="5,4" opacity="0.28" />
+        <line x1={cx} y1={cy - arm} x2={cx} y2={screenY}
+          stroke={T.border} strokeWidth="1" strokeDasharray="5,4" opacity="0.28" />
+
+        {/* ── Eingehender Strahl (gold) ── */}
+        {srcPos > 0 && srcPos < 1 && (
+          <path d={hPkt(cx - arm, cx, cy, srcPos, tPh)}
+            fill="none" stroke={T.gold} strokeWidth="2.2" opacity="0.9" />
+        )}
+
+        {/* ── Arm I ausgehend (BLUE →) ── */}
+        {outPos > 0 && outPos < 1 && (
+          <path d={hPkt(cx, cx + arm, cy, outPos, tPh)}
+            fill="none" stroke={IBLUE} strokeWidth="2.2" opacity="0.92" />
+        )}
+        {/* ── Arm I rückkehrend (BLUE ←) ── */}
+        {retPos > 0 && retPos < 1 && (
+          <path d={hPkt(cx + arm, cx, cy, retPos, tPh)}
+            fill="none" stroke={IBLUE} strokeWidth="2.2" opacity="0.92" />
+        )}
+
+        {/* ── Arm II ausgehend (ORANGE ↑) ── */}
+        {outPos > 0 && outPos < 1 && (
+          <path d={vPkt(cx, cy, cy - arm, outPos, tPh)}
+            fill="none" stroke={IORANGE} strokeWidth="2.2" opacity="0.92" />
+        )}
+        {/* ── Arm II rückkehrend (ORANGE ↓) ── */}
+        {retPos > 0 && retPos < 1 && (
+          <path d={vPkt(cx, cy - arm, cy, retPos, tPh)}
+            fill="none" stroke={IORANGE} strokeWidth="2.2" opacity="0.92" />
+        )}
+
+        {/* ── Zum Schirm: beide Pakete nebeneinander (↓) ── */}
+        {toscPos > 0 && toscPos < 1 && (
+          <>
+            <path d={vPkt(cx - 4, cy, screenY, toscPos, tPh)}
+              fill="none" stroke={IBLUE} strokeWidth="2.2" opacity="0.9" />
+            <path d={vPkt(cx + 4, cy, screenY, toscPos, tPh)}
+              fill="none" stroke={IORANGE} strokeWidth="2.2" opacity="0.9" />
+          </>
+        )}
+
+        {/* ── Schirm-Panel: zwei phasengleiche Wellenpakete ── */}
+        {scrA > 0 && (
+          <g opacity={scrA}>
+            <rect x={panelX} y={screenY + 22} width="104" height="52"
+              fill={T.bg} stroke={T.border} strokeWidth="1" rx="2" />
+            {/* BLUE oben */}
+            <path d={panelWave(panelX + 22, screenY + 36, 0)}
+              fill="none" stroke={IBLUE} strokeWidth="2.2" clipPath="url(#pClip)" />
+            {/* ORANGE unten, exakt gleiche Phase */}
+            <path d={panelWave(panelX + 22, screenY + 52, 0)}
+              fill="none" stroke={IORANGE} strokeWidth="2.2" clipPath="url(#pClip)" />
+            <text x={cx} y={screenY + 83} textAnchor="middle"
+              fontFamily={T.mono} fontSize="9" fill={T.accent} letterSpacing="0.5">
+              gleiche Phase — kein Phasenversatz
+            </text>
+          </g>
+        )}
+
+        {/* ── Statische Elemente ── */}
+        {/* Quelle */}
+        <circle cx={cx - arm} cy={cy} r="12" fill="none" stroke={T.gold} strokeWidth="2.2" />
+        <circle cx={cx - arm} cy={cy} r="6" fill={T.gold} opacity="0.8" />
+
+        {/* Strahlteiler */}
         <rect x={cx - 11} y={cy - 11} width="22" height="22"
-          fill="none" stroke={T.accent} strokeWidth="2"
+          fill={T.surface} fillOpacity="0.9" stroke={T.accent} strokeWidth="2"
           transform={`rotate(45,${cx},${cy})`} />
 
-        {/* Mirror A (horizontal) */}
-        <rect x={cx + arm - 5} y={cy - 20} width="10" height="40"
+        {/* Spiegel A */}
+        <rect x={cx + arm - 5} y={cy - 22} width="10" height="44"
           fill={T.blue} rx="2" opacity="0.75" />
 
-        {/* Mirror B (vertical) */}
-        <rect x={cx - 20} y={cy - arm - 5} width="40" height="10"
+        {/* Spiegel B */}
+        <rect x={cx - 22} y={cy - arm - 5} width="44" height="10"
           fill={T.blue} rx="2" opacity="0.75" />
 
-        {/* Photon glow + core */}
-        <circle cx={px} cy={py} r={8 * glow} fill={T.gold} opacity="0.22" />
-        <circle cx={px} cy={py} r="4.5" fill={T.gold} opacity="0.95" />
+        {/* Schirm */}
+        <rect x={cx - 38} y={screenY} width="76" height="20"
+          fill={T.blue} rx="2" opacity="0.5" />
+        <text x={cx} y={screenY + 14} textAnchor="middle"
+          fontFamily={T.mono} fontSize="10" fill="white" opacity="0.85">Schirm</text>
 
         {/* Labels */}
         <text x={cx + arm + 18} y={cy + 5}
           fontFamily={T.mono} fontSize="12" fill={T.textSec}>Spiegel A</text>
-        <text x={cx} y={cy - arm - 14}
-          fontFamily={T.mono} fontSize="12" fill={T.textSec} textAnchor="middle">Spiegel B</text>
+        <text x={cx} y={cy - arm - 16} textAnchor="middle"
+          fontFamily={T.mono} fontSize="12" fill={T.textSec}>Spiegel B</text>
         <text x={cx + 16} y={cy + 20}
           fontFamily={T.mono} fontSize="11" fill={T.textSec}>Strahlteiler</text>
-        <text x={cx - arm} y={cy + 28}
-          fontFamily={T.mono} fontSize="12" fill={T.textSec} textAnchor="middle">Quelle</text>
+        <text x={cx - arm} y={cy + 29} textAnchor="middle"
+          fontFamily={T.mono} fontSize="12" fill={T.textSec}>Quelle</text>
+
+        {/* Arm-Richtungshinweise */}
+        <text x={cx + arm / 2} y={cy - 9} textAnchor="middle"
+          fontFamily={T.mono} fontSize="9" fill={IBLUE} opacity="0.7">‖ zum Wind</text>
+        <text x={cx - 14} y={cy - arm / 2 + 4} textAnchor="end"
+          fontFamily={T.mono} fontSize="9" fill={IORANGE} opacity="0.7">⊥ Wind</text>
+
+        {/* Legende */}
+        <rect x="288" y="47" width="104" height="40" fill={T.surface} rx="2" />
+        <line x1="296" y1="60" x2="318" y2="60" stroke={IBLUE} strokeWidth="2.5" />
+        <text x="323" y="64" fontFamily={T.mono} fontSize="9.5" fill={IBLUE}>Arm I (‖ Wind)</text>
+        <line x1="296" y1="77" x2="318" y2="77" stroke={IORANGE} strokeWidth="2.5" />
+        <text x="323" y="81" fontFamily={T.mono} fontSize="9.5" fill={IORANGE}>Arm II (⊥ Wind)</text>
       </svg>
-      <span style={S.vizCaption}>Michelson-Morley-Interferometer (schematisch)</span>
+      <span style={S.vizCaption}>
+        Beide Wellen kehren phasengleich zurück — Wellenberge und Täler stimmen überein.
+        Das Interferenzmuster auf dem Schirm verschiebt sich nicht.
+      </span>
     </div>
   )
 }
@@ -799,11 +964,9 @@ const MODERN = [
 const TOC = [
   { n: '01', t: 'Einführung — Was bedeutet Konstanz der Lichtgeschwindigkeit?' },
   { n: '02', t: 'Das Michelson-Morley-Experiment' },
-  { n: '04', t: 'Einsteins Postulate der speziellen Relativitätstheorie' },
-  { n: '05', t: 'Was macht c so besonders?' },
-  { n: '06', t: 'Die revolutionären Konsequenzen' },
-  { n: '07', t: 'Experimentelle Bestätigungen' },
-  { n: '08', t: 'Bedeutung für die moderne Physik' },
+  { n: '03', t: 'Einsteins Postulate der speziellen Relativitätstheorie' },
+  { n: '04', t: 'Experimentelle Bestätigungen' },
+  { n: '05', t: 'Bedeutung für die moderne Physik' },
 ]
 
 // ── App ────────────────────────────────────────────────────────────────────
@@ -917,20 +1080,44 @@ export default function App() {
           {/* ── 02 MICHELSON-MORLEY ── */}
           <section style={S.sectionGap}>
             <Heading num="02">Das Michelson-Morley-Experiment</Heading>
+
+            <h3 style={S.h3}>Der Äther — das hypothetische Medium des Lichts</h3>
+            <p style={S.p}>
+              Schall braucht Luft. Wasser­wellen brauchen Wasser. Als im 19. Jahrhundert feststand, dass
+              Licht sich wie eine Welle verhält, schien es selbstverständlich: auch Licht muss ein Medium
+              haben, durch das es sich ausbreitet. Dieses hypothetische Medium nannte man den <em>Licht­äther</em> —
+              eine unsichtbare, alles durchdringende Substanz, die den gesamten Weltraum ausfüllt und
+              vollkommen in Ruhe steht.
+            </p>
+            <p style={S.p}>
+              Die Konsequenz war klar: Da die Erde sich mit etwa 30 km/s um die Sonne bewegt, muss sie
+              durch diesen ruhenden Äther hindurchrasen. Für einen Beobachter auf der Erde sollte das wie
+              ein „Ätherwind" wirken — ähnlich wie man beim Fahrradfahren Gegenwind spürt, auch wenn die
+              Luft eigentlich still steht. Dieser Ätherwind müsste die Lichtgeschwindigkeit je nach
+              Richtung messbar beeinflussen: gegen den Wind langsamer, mit dem Wind schneller.
+            </p>
+            <Callout label="Die Vorhersage">
+              Wenn der Äther existiert und die Erde sich durch ihn bewegt, muss Licht entlang der
+              Erdbahn­richtung eine andere Laufzeit haben als senkrecht dazu. Die Differenz wäre klein,
+              aber messbar — vorausgesetzt, man hat ein präzises genug Instrument.
+            </Callout>
+
+            <h3 style={S.h3}>Das Experiment</h3>
             <p style={S.p}>
               Im Jahr 1887 führten Albert A. Michelson und Edward W. Morley in Cleveland, Ohio, eines
               der folgenreichsten Experimente der Physikgeschichte durch. Sie konstruierten ein
               Interferometer: Ein Lichtstrahl wird durch einen halbdurchlässigen Spiegel in zwei
               Teilstrahlen aufgeteilt, die senkrecht zueinander laufen. Jeder Strahl wird an einem
-              Spiegel reflektiert und kehrt zum Ausgangspunkt zurück, wo beide wieder vereinigt werden.
+              Spiegel reflektiert und kehrt zum Ausgangspunkt zurück, wo beide auf einem Schirm
+              wieder vereinigt werden und ein Interferenzmuster erzeugen.
             </p>
             <Interferometer />
             <p style={S.p}>
-              Die Physiker erwarteten eine Verschiebung der Interferenzstreifen beim Drehen des
-              Apparats, weil ein Strahl „mit" und der andere „gegen" den Ätherwind laufen sollte. Bei
-              der Geschwindigkeit der Erde hätte diese Verschiebung zwar winzig sein sollen — etwa
-              0,4 Streifenbreiten —, aber Michelsons Instrument war präzise genug, um selbst ein Zehntel
-              davon zu messen.
+              Die Physiker erwarteten eine Verschiebung des Interferenzmusters auf dem Schirm beim
+              Drehen des Apparats, weil ein Strahl „mit" und der andere „gegen" den Ätherwind laufen
+              sollte. Bei der Geschwindigkeit der Erde hätte diese Verschiebung zwar winzig sein sollen —
+              etwa 0,4 Streifenbreiten —, aber Michelsons Instrument war präzise genug, um selbst ein
+              Zehntel davon zu messen.
             </p>
             <Callout label="Das Ergebnis">
               Es gab keine Verschiebung. Null. In keiner Richtung und zu keiner Jahreszeit. Das Licht
@@ -946,9 +1133,9 @@ export default function App() {
             </p>
           </section>
 
-          {/* ── 04 EINSTEINS POSTULATE ── */}
+          {/* ── 03 EINSTEINS POSTULATE ── */}
           <section style={S.sectionGap}>
-            <Heading num="04">Einsteins Postulate</Heading>
+            <Heading num="03">Einsteins Postulate</Heading>
             <p style={S.p}>
               Im Jahr 1905 veröffentlichte der damals 26-jährige Albert Einstein seine Arbeit „Zur
               Elektrodynamik bewegter Körper". Statt das Michelson-Morley-Ergebnis durch komplizierte
@@ -997,103 +1184,23 @@ export default function App() {
             </Callout>
           </section>
 
-          {/* ── 05 WAS MACHT C BESONDERS ── */}
+          {/* ── 04 EXPERIMENTE ── */}
           <section style={S.sectionGap}>
-            <Heading num="05">Was macht c so besonders?</Heading>
+            <Heading num="04">Experimentelle Bestätigungen</Heading>
             <p style={S.p}>
-              Die Lichtgeschwindigkeit c ist nicht einfach „die Geschwindigkeit, mit der sich Licht
-              zufällig bewegt". Sie ist eine fundamentale Strukturkonstante des Universums — eine
-              kosmische Geschwindigkeitsbegrenzung, die tief in der Geometrie der Raumzeit verankert ist.
-            </p>
-            <p style={S.p}>
-              <strong style={{ color: T.accent }}>c ist die Grenzgeschwindigkeit der Kausalität.</strong>{' '}
-              Keine Information, keine Energie und kein materielles Objekt kann sich schneller als c
-              ausbreiten. Das ist keine technische Einschränkung — es ist ein fundamentales Naturgesetz.
-              Je mehr Energie man einem Teilchen zuführt, desto näher kommt es an c heran — aber es
-              erreicht c nie. Die benötigte Energie steigt ins Unendliche.
-            </p>
-            <LorentzCanvas />
-            <p style={S.p}>
-              <strong style={{ color: T.accent }}>c verbindet Raum und Zeit.</strong>{' '}
-              In der speziellen Relativitätstheorie ist c der Umrechnungsfaktor zwischen Raum- und
-              Zeitkoordinaten. Eine Sekunde in der Zeit entspricht knapp 300 000 Kilometern im Raum.
-              Raum und Zeit bilden eine vierdimensionale Raumzeit, in der c die „Wechselkursrate"
-              festlegt.
-            </p>
-            <RaumzeitVektor />
-            <p style={S.p}>
-              <strong style={{ color: T.accent }}>c folgt aus den Naturkonstanten.</strong>{' '}
-              Die Lichtgeschwindigkeit ergibt sich direkt aus der elektrischen Feldkonstante ε₀ und der
-              magnetischen Feldkonstante μ₀. Sie ist also keine willkürliche Zahl, sondern eine
-              zwingende Konsequenz der elektromagnetischen Grundgesetze.
-            </p>
-            <Formula
-              f="c = 1 / √(ε₀ · μ₀)"
-              caption="Die Lichtgeschwindigkeit folgt direkt aus den elektromagnetischen Feldkonstanten"
-            />
-            <p style={S.p}>
-              Seit 1983 wird der Meter über die Lichtgeschwindigkeit definiert: Ein Meter ist die
-              Strecke, die Licht im Vakuum in 1/299 792 458 Sekunden zurücklegt. Damit ist c nicht mehr
-              ein Messwert, sondern eine exakte Definitionskonstante.
-            </p>
-          </section>
-
-          {/* ── 06 KONSEQUENZEN ── */}
-          <section style={S.sectionGap}>
-            <Heading num="06">Die revolutionären Konsequenzen</Heading>
-            <p style={S.p}>
-              Wenn man die Konstanz der Lichtgeschwindigkeit akzeptiert, folgen daraus Konsequenzen, die
-              unser Alltagsverständnis sprengen. Diese Effekte sind keine Gedankenspiele — sie sind
-              experimentell vielfach bestätigt.
-            </p>
-
-            <h3 style={S.h3}>Zeitdilatation</h3>
-            <p style={S.p}>
-              Bewegte Uhren gehen langsamer. Je schneller sich ein Objekt bewegt, desto langsamer
-              vergeht seine Zeit relativ zu einem ruhenden Beobachter. Bei 87 % von c vergeht die Zeit
-              nur noch halb so schnell. Dies ist kein Fehler der Uhren — die Zeit selbst vergeht
-              tatsächlich langsamer.
-            </p>
-            <Formula
-              f="Δt' = Δt / √(1 − v²/c²)"
-              caption="Zeitdilatationsformel — die bewegte Zeit Δt' ist immer größer als die Eigenzeit Δt"
-            />
-            <LichtUhr />
-            <ZeitRechner />
-
-            <h3 style={S.h3}>Längenkontraktion</h3>
-            <p style={S.p}>
-              Bewegte Objekte werden in Bewegungsrichtung kürzer. Ein Raumschiff, das mit 87 % von c
-              fliegt, erscheint für einen ruhenden Beobachter nur noch halb so lang. Das Objekt selbst
-              „merkt" davon nichts — für die Insassen ist alles normal.
-            </p>
-            <Formula
-              f="L' = L · √(1 − v²/c²)"
-              caption="Längenkontraktion — die beobachtete Länge L' ist kürzer als die Eigenlänge L"
-            />
-
-            <h3 style={S.h3}>Relativität der Gleichzeitigkeit</h3>
-            <p style={S.p}>
-              Zwei Ereignisse, die für einen Beobachter gleichzeitig stattfinden, können für einen
-              bewegten Beobachter zu unterschiedlichen Zeiten geschehen. „Gleichzeitig" ist kein
-              absolutes Konzept mehr, sondern hängt vom Bezugssystem ab. Das erschüttert unser
-              fundamentalstes Zeitverständnis.
-            </p>
-          </section>
-
-          {/* ── 07 EXPERIMENTE ── */}
-          <section style={S.sectionGap}>
-            <Heading num="07">Experimentelle Bestätigungen</Heading>
-            <p style={S.p}>
-              Die Konstanz der Lichtgeschwindigkeit gehört zu den am besten überprüften Aussagen der
-              gesamten Physik. Hier die wichtigsten Meilensteine:
+              Aus Einsteins Postulaten folgen konkrete, messbare Vorhersagen: Bewegte Uhren gehen
+              langsamer als ruhende — ein Effekt, den man <em>Zeitdilatation</em> nennt. Bewegte
+              Objekte erscheinen in Fahrtrichtung kürzer (<em>Längenkontraktion</em>). Und
+              Gleichzeitigkeit ist kein absolutes Konzept mehr, sondern hängt vom Bezugssystem ab.
+              All das klingt nach Spekulation — ist es aber nicht. Die Konstanz der Lichtgeschwindigkeit
+              und ihre Konsequenzen gehören zu den am besten überprüften Aussagen der gesamten Physik:
             </p>
             <Timeline />
           </section>
 
-          {/* ── 08 MODERNE PHYSIK ── */}
+          {/* ── 05 MODERNE PHYSIK ── */}
           <section style={S.sectionGap}>
-            <Heading num="08">Bedeutung für die moderne Physik</Heading>
+            <Heading num="05">Bedeutung für die moderne Physik</Heading>
             <p style={S.p}>
               Die Konstanz der Lichtgeschwindigkeit ist das Fundament, auf dem weite Teile der modernen
               Physik aufgebaut sind. Praktisch jede fundamentale Theorie setzt die Lorentz-Invarianz —
